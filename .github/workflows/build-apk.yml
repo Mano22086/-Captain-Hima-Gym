@@ -63,6 +63,6 @@ jobs:
           name: Release v1.0.${{ github.run_number }}
           files: project/app/build/outputs/apk/debug/*.apk
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          G          ITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   work
