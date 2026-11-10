@@ -52,26 +52,26 @@ jobs:
           APK=$(find app/build/outputs/apk/debug -name "*.apk" | head -n 1)
           if [ -n "$APK" ]; then
             mkdir -p release_out
-            cp "$APK" release_out/Captain-Hima-Gym-v3-NEW.apk
-            cp "$APK" Captain-Hima-Gym-v3-NEW.apk
+            cp "$APK" release_out/Captain-Hima-Gym-v8.apk
+            cp "$APK" Captain-Hima-Gym-v8.apk
             git config user.name "github-actions[bot]"
             git config user.email "github-actions[bot]@users.noreply.github.com"
-            git add Captain-Hima-Gym-v3-NEW.apk
-            git commit -m "Add Captain-Hima-Gym-v3-NEW.apk [skip ci]" || true
+            git add Captain-Hima-Gym-v8.apk
+            git commit -m "Add Captain-Hima-Gym-v8.apk [skip ci]" || true
             git push origin main || true
           fi
 
       - name: Upload APK Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: Captain-Hima-Gym-NEW-APK
-          path: release_out/Captain-Hima-Gym-v3-NEW.apk
+          name: Captain-Hima-Gym-v8-APK
+          path: release_out/Captain-Hima-Gym-v8.apk
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: "v3.0-NEW"
-          name: "Captain Hima Gym APK v3.0 (النسخة الجديدة)"
-          files: release_out/Captain-Hima-Gym-v3-NEW.apk
+          tag_name: "v8.0-update"
+          name: "Captain Hima Gym APK v8.0 (النسخة المعدلة الأخيرة)"
+          files: release_out/Captain-Hima-Gym-v8.apk
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
