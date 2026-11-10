@@ -25,7 +25,7 @@ jobs:
         with:
           gradle-version: "9.3.1"
 
-      - name: Unpack and Prepare Android Project
+      - name: Prepare and Inject Features
         run: |
           ZIP_FILE=$(ls -t *.zip 2>/dev/null | head -n 1)
           if [ -n "$ZIP_FILE" ]; then
@@ -36,11 +36,186 @@ jobs:
             cp -rn "$SETTINGS_DIR"/. .
           fi
           
-          # إدخال بيانات Supabase للربط التلقائي
+          # ربط السوبابيز
           echo "SUPABASE_URL=https://tnxdombqeiqgiwoxgaxc.supabase.co" > .env
           echo "SUPABASE_ANON_KEY=sb_publishable_s2We-im8Fr5p6ANGPk69bA_jQQGpQjr" >> .env
           echo "sdk.dir=$ANDROID_HOME" > local.properties
           
+          # إضافة إذن فحص الشبكة
+          sed -i "/ACCESS_NETWORK_STATE/d" app/src/main/AndroidManifest.xml 2>/dev/null || true
+          sed -i "s|<uses-permission android:name=\"android.permission.INTERNET\" />|<uses-permission android:name=\"android.permission.INTERNET\" />\n    <uses-permission android:name=\"android.permission.ACCESS_NETWORK_STATE\" />|g" app/src/main/AndroidManifest.xml 2>/dev/null || true
+          
+          # توليد ملف شاشة النت الفخمة تلقائياً
+          cat << 'OEOF' > app/src/main/java/com/example/ui/components/NetworkStatusOverlay.kt
+package com.example.ui.components
+
+import android.content.Context
+import android.net.ConnectivityManager
+import android.net.Network
+import android.net.NetworkCapabilities
+import android.net.NetworkRequest
+import androidx.compose.animation.*
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.WifiOff
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+
+@Composable
+fun rememberNetworkConnectedState(): State<Boolean> {
+    val context = LocalContext.current
+    return produceState(initialValue = isCurrentlyConnected(context)) {
+        val connectivityManager = context.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
+        val request = NetworkRequest.Builder()
+            .addCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+            .build()
+        val callback = object : ConnectivityManager.NetworkCallback() {
+            override fun onAvailable(network: Network) { value = true }
+            override fun onLost(network: Network) { value = isCurrentlyConnected(context) }
+        }
+        connectivityManager.registerNetworkCallback(request, callback)
+        awaitDispose {
+            connectivityManager.unregisterNetworkCallback(callback)
+        }
+    }
+}
+
+private fun isCurrentlyConnected(context: Context): Boolean {
+    val cm = context.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
+    val act = cm.activeNetwork ?: return false
+    val caps = cm.getNetworkCapabilities(act) ?: return false
+    return caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+}
+
+@Composable
+fun LuxuryNoInternetOverlay(
+    isConnected: Boolean,
+    onRetry: () -> Unit
+) {
+    AnimatedVisibility(
+        visible = !isConnected,
+        enter = fadeIn() + scaleIn(initialScale = 0.95f),
+        exit = fadeOut() + scaleOut()
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(Color(0xE6050507)),
+            contentAlignment = Alignment.Center
+        ) {
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth(0.88f)
+                    .border(
+                        width = 1.5.dp,
+                        brush = Brush.linearGradient(listOf(Color(0xFFFF5E00), Color(0xFFFFB800))),
+                        shape = RoundedCornerShape(28.dp)
+                    ),
+                shape = RoundedCornerShape(28.dp),
+                colors = CardDefaults.cardColors(containerColor = Color(0xF2121217))
+            ) {
+                Column(
+                    modifier = Modifier.padding(28.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.Center
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(76.dp)
+                            .clip(CircleShape)
+                            .background(Brush.radialGradient(listOf(Color(0x33FF5E00), Color(0x10FF5E00))))
+                            .border(1.dp, Color(0x66FF5E00), CircleShape),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.WifiOff,
+                            contentDescription = "لا يوجد اتصال",
+                            tint = Color(0xFFFF5E00),
+                            modifier = Modifier.size(38.dp)
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.height(20.dp))
+
+                    Text(
+                        text = "انقطع الاتصال بالإنترنت ⚠️",
+                        color = Color.White,
+                        fontSize = 20.sp,
+                        fontWeight = FontWeight.Black,
+                        textAlign = TextAlign.Center
+                    )
+
+                    Spacer(modifier = Modifier.height(10.dp))
+
+                    Text(
+                        text = "تطبيق كابتن هيما جيم يتطلب اتصالاً نشطاً بالإنترنت لمزامنة الحجوزات والاشتراكات واستوريهات النادي لحظياً. يرجى التحقق من الشبكة وإعادة المحاولة.",
+                        color = Color(0xFFA1A1AA),
+                        fontSize = 13.sp,
+                        lineHeight = 20.sp,
+                        textAlign = TextAlign.Center
+                    )
+
+                    Spacer(modifier = Modifier.height(24.dp))
+
+                    Button(
+                        onClick = onRetry,
+                        colors = ButtonDefaults.buttonColors(containerColor = Color.Transparent),
+                        contentPadding = PaddingValues(0.dp),
+                        shape = RoundedCornerShape(16.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(50.dp)
+                            .background(
+                                Brush.horizontalGradient(listOf(Color(0xFFFF5E00), Color(0xFFFF8A00))),
+                                RoundedCornerShape(16.dp)
+                            )
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(Icons.Default.Refresh, contentDescription = null, tint = Color.White)
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = "إعادة المحاولة الآن",
+                                color = Color.White,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 15.sp
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+OEOF
+
+          # حقن الشاشة في كود التطبيق تلقائياً
+          python3 -c '
+with open("app/src/main/java/com/example/MainActivity.kt", "r") as f:
+    code = f.read()
+if "rememberNetworkConnectedState" not in code:
+    code = code.replace("val isSplashVisible by gymViewModel.isSplashVisible.collectAsStateWithLifecycle()", "val isNetworkConnected by rememberNetworkConnectedState()\n                val isSplashVisible by gymViewModel.isSplashVisible.collectAsStateWithLifecycle()")
+    code = code.replace("Crossfade(\n                    targetState = Triple(isSplashVisible", "Box(modifier = Modifier.fillMaxSize()) {\n                    Crossfade(\n                        targetState = Triple(isSplashVisible")
+    code = code.replace("CaptainHimaGymApp(viewModel = gymViewModel)\n                        }\n                    }\n                }\n            }", "CaptainHimaGymApp(viewModel = gymViewModel)\n                        }\n                    }\n                }\n                LuxuryNoInternetOverlay(isConnected = isNetworkConnected, onRetry = { gymViewModel.startCloudSync() })\n            }\n            }")
+    with open("app/src/main/java/com/example/MainActivity.kt", "w") as f:
+        f.write(code)
+print("MainActivity successfully patched!")
+' || true
+
           sed -i "/signingConfig = signingConfigs/d" app/build.gradle.kts 2>/dev/null || true
           sed -i "/signingConfig signingConfigs/d" app/build.gradle.kts 2>/dev/null || true
           yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses >/dev/null 2>&1 || true
@@ -54,26 +229,26 @@ jobs:
           APK=$(find app/build/outputs/apk/debug -name "*.apk" | head -n 1)
           if [ -n "$APK" ]; then
             mkdir -p release_out
-            cp "$APK" release_out/Captain-Hima-Gym-Connected.apk
-            cp "$APK" Captain-Hima-Gym-Connected.apk
+            cp "$APK" release_out/Captain-Hima-Gym-v9-Luxury.apk
+            cp "$APK" Captain-Hima-Gym-v9-Luxury.apk
             git config user.name "github-actions[bot]"
             git config user.email "github-actions[bot]@users.noreply.github.com"
-            git add Captain-Hima-Gym-Connected.apk
-            git commit -m "Add Captain-Hima-Gym-Connected.apk [skip ci]" || true
+            git add Captain-Hima-Gym-v9-Luxury.apk
+            git commit -m "Add Captain-Hima-Gym-v9-Luxury.apk [skip ci]" || true
             git push origin main || true
           fi
 
       - name: Upload APK Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: Captain-Hima-Gym-Connected-APK
-          path: release_out/Captain-Hima-Gym-Connected.apk
+          name: Captain-Hima-Gym-APK
+          path: release_out/Captain-Hima-Gym-v9-Luxury.apk
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: "v3.1-connected"
-          name: "Captain Hima Gym APK v3.1 (متصل بـ Supabase)"
-          files: release_out/Captain-Hima-Gym-Connected.apk
+          tag_name: "v9.0-luxury"
+          name: "Captain Hima Gym APK v9.0 (مربوط بسوبابيز وشاشة انقطاع النت الفخمة)"
+          files: release_out/Captain-Hima-Gym-v9-Luxury.apk
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
