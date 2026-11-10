@@ -1,8 +1,7 @@
 name: Build APK
-
 on:
   push:
-    branches: [ "main" ]
+    branches: [ main ]
   workflow_dispatch:
 
 permissions:
@@ -12,197 +11,67 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout repository
+      - name: Checkout Repository
         uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
 
-      - name: Extract latest ZIP project if present
-        run: |
-          ZIP_FILE=$(ls -t *.zip 2>/dev/null | head -n 1)
-          if [ -n "$ZIP_FILE" ]; then
-            echo "Extracting $ZIP_FILE..."
-            unzip -o "$ZIP_FILE"
-          else
-            echo "No zip file found."
-          fi
-
-      - name: Set up Java 21
+      - name: Set up JDK 21
         uses: actions/setup-java@v4
         with:
-          java-version: '21'
-          distribution: 'temurin'
+          distribution: "temurin"
+          java-version: "21"
 
       - name: Set up Gradle 9.3.1
         uses: gradle/actions/setup-gradle@v4
         with:
-          gradle-version: '9.3.1'
+          gradle-version: "9.3.1"
 
-      - name: Prepare .env and local.properties
-        run: |
-          touch .env
-          SDK_DIR=$ANDROID_HOME
-          echo "sdk.dir=$SDK_DIR" > local.properties
-
-      - name: Fix build.gradle.kts (remove missing debugConfig)
-        run: |
-          find . -name "build.gradle.kts" -exec sed -i '/debugConfig/d' {} +
-          find . -name "build.gradle" -exec sed -i '/debugConfig/d' {} +
-
-      - name: Make gradlew executable if present
-        run: |
-          if [ -f "./gradlew" ]; then
-            chmod +x ./gradlew
-          fi
-
-      - name: Build APK with Gradle
-        run: |
-          if [ -f "./gradlew" ]; then
-            ./gradlew assembleDebug --no-daemon
-          else
-            gradle assembleDebug --no-daemon
-          fi
-
-      - name: Locate and copy output APK to repository root
-        run: |
-          APK_PATH=$(find . -name "*.apk" ! -name "Captain-Hima-Gym*.apk" | head -n 1)
-          if [ -z "$APK_PATH" ]; then
-            APK_PATH=$(find . -name "*.apk" | head -n 1)
-          fi
-          echo "Found APK at: $Aname: Build APK
-
-on:
-  push:
-    branches: [ "main" ]
-  workflow_dispatch:
-
-permissions:
-  contents: write
-
-jobs:
-  build:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
-      - name: Extract latest ZIP project if present
+      - name: Unpack and Prepare Android Project
         run: |
           ZIP_FILE=$(ls -t *.zip 2>/dev/null | head -n 1)
           if [ -n "$ZIP_FILE" ]; then
-            echo "Extracting $ZIP_FILE..."
-            unzip -o "$ZIP_FILE"
-          else
-            echo "No zip file found."
+            unzip -o -q "$ZIP_FILE"
           fi
-
-      - name: Set up Java 21
-        uses: actions/setup-java@v4
-        with:
-          java-version: '21'
-          distribution: 'temurin'
-
-      - name: Set up Gradle 9.3.1
-        uses: gradle/actions/setup-gradle@v4
-        with:
-          gradle-version: '9.3.1'
-
-      - name: Prepare .env and local.properties
-        run: |
-          touch .env
-          SDK_DIR=$ANDROID_HOME
-          echo "sdk.dir=$SDK_DIR" > local.properties
-
-      - name: Fix build.gradle.kts (remove missing debugConfig)
-        run: |
-          find . -name "build.gradle.kts" -exec sed -i '/debugConfig/d' {} +
-          find . -name "build.gradle" -exec sed -i '/debugConfig/d' {} +
-
-      - name: Make gradlew executable if present
-        run: |
-          if [ -f "./gradlew" ]; then
-            chmod +x ./gradlew
+          SETTINGS_DIR=$(find . -name "settings.gradle.kts" -not -path "*/build/*" | head -n 1 | xargs dirname)
+          if [ -n "$SETTINGS_DIR" ] && [ "$SETTINGS_DIR" != "." ]; then
+            cp -rn "$SETTINGS_DIR"/. .
           fi
+          cp .env.example .env 2>/dev/null || true
+          echo "SUPABASE_URL=https://placeholder.supabase.co" >> .env
+          echo "SUPABASE_ANON_KEY=placeholder" >> .env
+          echo "sdk.dir=$ANDROID_HOME" > local.properties
+          sed -i "/signingConfig = signingConfigs/d" app/build.gradle.kts 2>/dev/null || true
+          sed -i "/signingConfig signingConfigs/d" app/build.gradle.kts 2>/dev/null || true
+          yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses >/dev/null 2>&1 || true
 
-      - name: Build APK with Gradle
+      - name: Build Android APK
         run: |
-          if [ -f "./gradlew" ]; then
-            ./gradlew assembleDebug --no-daemon
-          else
-            gradle assembleDebug --no-daemon
-          fi
+          gradle assembleDebug --no-daemon
 
-      - name: Find and copy output APK
+      - name: Copy and Commit APK to Root
         run: |
-          APK_PATH=$(find . -name "*.apk" -path "*/build/outputs/apk/*" | head -n 1)
-          if [ -z "$APK_PATH" ]; then
-            APK_PATH=$(find . -name "*.apk" | head -n 1)
-          fi
-          if [ -z "$APK_PATH" ]; then
-            echo "Error: APK not found!"
-            exit 1
-          fi
-          echo "Found APK at $APK_PATH"
-          cp "$APK_PATH" ./Captain-Hima-Gym-v3-NEW.apk
-          cp "$APK_PATH" ./Captain-Hima-Gym-NEW.apk
-
-      - name: Commit and Push APK to Repo
-        run: |
-          git config --global user.name "github-actions[bot]"
-          git config --global user.email "github-actions[bot]@users.noreply.github.com"
-          git add Captain-Hima-Gym-v3-NEW.apk Captain-Hima-Gym-NEW.apk || true
-          if git diff --staged --quiet; then
-            echo "No changes to commit"
-          else
-            git commit -m "Build and update Captain-Hima-Gym-NEW.apk [skip ci]"
-            git push origin main
+          APK=$(find app/build/outputs/apk/debug -name "*.apk" | head -n 1)
+          if [ -n "$APK" ]; then
+            mkdir -p release_out
+            cp "$APK" release_out/Captain-Hima-Gym-v3-NEW.apk
+            cp "$APK" Captain-Hima-Gym-v3-NEW.apk
+            git config user.name "github-actions[bot]"
+            git config user.email "github-actions[bot]@users.noreply.github.com"
+            git add Captain-Hima-Gym-v3-NEW.apk
+            git commit -m "Add Captain-Hima-Gym-v3-NEW.apk [skip ci]" || true
+            git push origin main || true
           fi
 
       - name: Upload APK Artifact
         uses: actions/upload-artifact@v4
         with:
           name: Captain-Hima-Gym-NEW-APK
-          path: Captain-Hima-Gym-NEW.apk
+          path: release_out/Captain-Hima-Gym-v3-NEW.apk
 
-      - name: Create Release
-        uses: softprops/action-gh-release@v2
-        if: success()
-        with:
-          tag_name: v3.0-NEW
-          name: Release v3.0-NEW
-          body: "Automated Release for Captain Hima Gym v3 NEW APK"
-          files: Captain-Hima-Gym-NEW.apk
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}PK_PATH"
-          cp "$APK_PATH" ./Captain-Hima-Gym-v2.apk
-          cp "$APK_PATH" ./Captain-Hima-Gym.apk
-
-      - name: Commit and push APK to main branch
-        run: |
-          git config --global user.name "github-actions[bot]"
-          git config --global user.email "github-actions[bot]@users.noreply.github.com"
-          git add Captain-Hima-Gym-v2.apk Captain-Hima-Gym.apk || true
-          if git diff --staged --quiet; then
-            echo "No changes to commit"
-          else
-            git commit -m "Automated build: Update APK [skip ci]"
-            git push origin main
-          fi
-
-      - name: Upload APK artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: Captain-Hima-Gym-v2-APK
-          path: Captain-Hima-Gym-v2.apk
-
-      - name: Create Release and Upload APK
+      - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v2.0.${{ github.run_number }}
-          name: Release v2.0.${{ github.run_number }}
-          body: "Automated Release for Captain Hima Gym v2 APK"
-          files: Captain-Hima-Gym-v2.apk
+          tag_name: "v3.0-NEW"
+          name: "Captain Hima Gym APK v3.0 (النسخة الجديدة)"
+          files: release_out/Captain-Hima-Gym-v3-NEW.apk
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
